@@ -1,4 +1,4 @@
-
+import { Link } from "react-router-dom";
 import amico from "../assets/images/amico.svg";
 const Login = () => {
   return (
@@ -20,15 +20,29 @@ const Login = () => {
                 placeholder="Password"
                 className=" h-14 bg-[#192535] pl-8 rounded-3xl focus:outline-none mb-3"
               />
-              <a className="text-[#0066A4] pl-2 text-sm">Forgot password?</a>
+              <Link
+                to={"/reset-password"}
+                className="text-[#0066A4] pl-2 text-sm"
+              >
+                Forgot password?
+              </Link>
             </div>
 
             <button className="bg-[#263339] mx-auto w-36 h-14 rounded-2xl shadow-sm hover:shadow-lg">
-              Login
+              <Link to={"/home"}>Sign in</Link>
             </button>
+
+            {/* <button className="bg-[#263339] mx-auto w-36 h-14 rounded-2xl shadow-sm hover:shadow-lg">
+              Sign in
+            </button> */}
           </form>
           <p className="text-slate-200 text-center mt-1">
-            Don’t have an account? <span className="text-[#0066A4] pl-2 text-sm">Signup</span>
+            Don’t have an account?{" "}
+            <span className="text-[#0066A4] pl-2 text-sm">
+              <Link to={"/signup"} className="">
+                Sign-up
+              </Link>
+            </span>
           </p>
         </div>
         <div className="">

@@ -1,4 +1,4 @@
-
+import { Link } from "react-router-dom";
 import rafiki from "../assets/images/rafiki.svg";
 const Home = () => {
   return (
@@ -16,19 +16,24 @@ const Home = () => {
             vocal tone. harry up and join us now!{" "}
           </p>
           <div className="flex justify-around items-center p-4">
-            <a
+            <Link
+              to={"/signup"}
+              className="bg-[#263339] rounded-3xl w-44 h-12 text-slate-100 flex items-center justify-center"
+            >
+              <p className="font-semibold">Sign-up</p>
+            </Link>
+            {/* <a
               href="signup"
               className="bg-[#263339] rounded-3xl w-44 h-12 text-slate-100 flex items-center justify-center"
             >
               <p className="font-semibold">Sign-up</p>
-            </a>
-            <a
-              href="login"
+            </a> */}
+            <Link
+              to={"/signin"}
               className="rounded-3xl w-44 h-12 text-[#263339] flex items-center justify-center border-[#263339] border-2 bg-white"
             >
-              <p className="font-semibold">Login</p>
-            </a>
-            <a></a>
+              <p className="font-semibold">Sign-In</p>
+            </Link>
           </div>
         </section>
         <section>
