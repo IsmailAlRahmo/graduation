@@ -2,8 +2,8 @@ import Layout from "./pages/Layout";
 
 function App() {
   return (
-    <div className="w-full h-screen ">
-      <Layout></Layout>
+    <div className="h-screen">
+      <Layout />
     </div>
   );
 }
