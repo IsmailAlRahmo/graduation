@@ -12,16 +12,17 @@ import MyVideos from "./pages/MyVideos.jsx";
 import Reports from "./pages/Reports.jsx";
 import StartRecording from "./pages/StartRecording.jsx";
 import DummyWebSocket from "./pages/DummyWebSocket.jsx";
+import { QueryClient, QueryClientProvider } from "react-query";
 
 const router = createBrowserRouter([
   {
     path: "/",
     element: <Home />,
   },
-  {
-    path: "/dummy",
-    element: <DummyWebSocket />,
-  },
+  // {
+  //   path: "/dummy",
+  //   element: <DummyWebSocket />,
+  // },
   {
     path: "signin",
     element: <Login />,
@@ -57,9 +58,11 @@ const router = createBrowserRouter([
     ],
   },
 ]);
-
+const queryClient = new QueryClient();
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   </React.StrictMode>
 );
