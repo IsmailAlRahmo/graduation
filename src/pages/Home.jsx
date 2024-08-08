@@ -22,12 +22,6 @@ const Home = () => {
             >
               <p className="font-semibold">Sign-up</p>
             </Link>
-            {/* <a
-              href="signup"
-              className="bg-[#263339] rounded-3xl w-44 h-12 text-slate-100 flex items-center justify-center"
-            >
-              <p className="font-semibold">Sign-up</p>
-            </a> */}
             <Link
               to={"/signin"}
               className="rounded-3xl w-44 h-12 text-[#263339] flex items-center justify-center border-[#263339] border-2 bg-white"

@@ -4,13 +4,13 @@ import { FaCircle } from "react-icons/fa";
 import { IoMdRadioButtonOn } from "react-icons/io";
 const NavBar = () => {
   return (
-    <div className="flex items-center pt-10">
-      <div className="flex items-center h-12 px-2 mr-9 w-[834px] bg-[#192533] opacity-85 rounded-full justify-between text-white text-xl font-extralight">
-        <nav className="ml-10">
+    <div className="flex items-center justify-between pt-10">
+      <div className="flex items-center h-12 mr-2 w-3/4 bg-[#192533] opacity-85 rounded-full justify-between text-white text-xl font-extralight">
+        <nav className=" pl-4">
           <NavLink
             to={"overview"}
             className={({ isActive }) =>
-              "flex items-center" + (isActive ? " active" : "")
+              "flex items-center " + (isActive ? " active" : "")
             }
           >
             {({ isActive }) => (
@@ -30,7 +30,7 @@ const NavBar = () => {
           <NavLink
             to={"videos"}
             className={({ isActive }) =>
-              "flex items-center" + (isActive ? " active" : "")
+              "flex items-center " + (isActive ? " active" : "")
             }
           >
             {({ isActive }) => (
@@ -80,7 +80,7 @@ const NavBar = () => {
           </NavLink>
         </nav>
       </div>
-      <div className="w-1/5 text-wrap flex flex-col justify-start text-slate-200 font-semibold pl-4">
+      <div className="w-1/4 pl-8 text-wrap flex flex-col justify-start text-slate-200 font-semibold">
         <h1 className="text-xl">Hi, Omama Ewer</h1>
         <p className="text-sm text-slate-300">omamaewer@gmail.com</p>
       </div>

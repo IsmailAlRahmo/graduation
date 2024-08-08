@@ -7,6 +7,8 @@ import angry from "../assets/emojies/angry.png";
 import fear from "../assets/emojies/fear.png";
 import happy from "../assets/emojies/happy.png";
 import calm from "../assets/emojies/calm.png";
+import ImproveArea from "./ImproveArea";
+import TopAreas from "./TopAreas";
 
 const FacialExpressions = () => {
   let mycolor = "#8CD67C";
@@ -23,10 +25,10 @@ const FacialExpressions = () => {
     },
   }));
   return (
-    <div className=" text-white">
-      <div className="w-full flex h-44 pt-1 gap-2">
-        <div className="pl-16 pt-4 w-2/4">
-          <h1 className="text-5xl w-1/2 font-bold text-[#8CD67C]">
+    <div className="w-full pt-20 text-white">
+      <div className="flex h-44 gap-2 ">
+        <div className="pt-4 w-2/4">
+          <h1 className="text-5xl w-1/2 font-semibold text-[#8CD67C] pl-4">
             Facial expressions score
           </h1>
         </div>
@@ -58,10 +60,10 @@ const FacialExpressions = () => {
           </div>
         </div>
       </div>
-      <div className=" w-full h-64 flex gap-2 py-2">
+      <div className=" w-full h-64 flex gap-3 py-3">
         <div className="bg-[#192533] w-1/2 h-full rounded-3xl pt-4">
           <p className="text-center">Positive facial emotions:</p>
-          <div className="flex justify-between items-center px-32 py-4">
+          <div className="flex justify-between items-center px-12 py-4">
             <div>
               <div className="flex flex-col gap-3 items-center">
                 <h1 className="text-[#8CD67C]">Happy</h1>
@@ -93,7 +95,7 @@ const FacialExpressions = () => {
         </div>
         <div className="bg-[#192533] w-1/2 h-full rounded-3xl pt-4">
           <p className="text-center">Negative facial emotions:</p>
-          <div className="flex justify-between items-center px-32 py-4">
+          <div className="flex justify-between items-center px-12 py-4">
             <div>
               <div className="flex flex-col gap-3 items-center">
                 <h1 className="text-[#8CD67C]">Sad</h1>
@@ -138,13 +140,9 @@ const FacialExpressions = () => {
           </div>
         </div>
       </div>
-      <div className="w-full h-[97px] flex gap-1">
-        <div className="w-1/2 bg-[#192533] pt-1 rounded-3xl">
-          <p className="text-center"> Your top areas:</p>
-        </div>
-        <div className="w-1/2 bg-[#192533] pt-1 rounded-3xl">
-          <p className="text-center"> Your areas to improve:</p>
-        </div>
+      <div className="w-full pt-3 flex gap-3 h-[120px]">
+        <ImproveArea />
+        <TopAreas />
       </div>
     </div>
   );

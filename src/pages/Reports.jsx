@@ -7,9 +7,9 @@ import VocalTone from "../components/VocalTone";
 
 const Reports = () => {
   return (
-    <div className="w-full h-[529px] bg-red-200 overflow-y-scroll no-scrollbar ">
-      {/* <BodyLanguage /> */}
-      {/* <FacialExpressions /> */}
+    <div className="w-full h-[529px] overflow-y-scroll no-scrollbar ">
+      <BodyLanguage />
+      <FacialExpressions />
       <VocalTone />
     </div>
   );

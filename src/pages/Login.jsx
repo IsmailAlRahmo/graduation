@@ -29,7 +29,7 @@ const Login = () => {
             </div>
 
             <button className="bg-[#263339] mx-auto w-36 h-14 rounded-2xl shadow-sm hover:shadow-lg">
-              <Link to={"/home"}>Sign in</Link>
+              <Link to={"/home/overview"}>Sign in</Link>
             </button>
 
             {/* <button className="bg-[#263339] mx-auto w-36 h-14 rounded-2xl shadow-sm hover:shadow-lg">
