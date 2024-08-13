@@ -1,6 +1,4 @@
-import { Gauge, gaugeClasses } from "@mui/x-charts";
-import React from "react";
-import Stat from "../components/Stat";
+
 import BodyLanguage from "../components/BodyLanguage";
 import FacialExpressions from "../components/FacialExpressions";
 import VocalTone from "../components/VocalTone";

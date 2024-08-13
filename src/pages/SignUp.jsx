@@ -1,43 +1,13 @@
 import { useState } from "react";
 import bro from "../assets/images/bro.svg";
-import { useMutation } from "react-query";
-
-const login = async (data) => {
-  // const response = await fetch("http://iptv.likesyria.sy/new_bill/auth", {
-  //   method: "POST",
-  //   headers: {
-  //     "Content-Type": "application/json",
-  //   },
-  //   body: JSON.stringify(data),
-  // });
-  const user = {
-    username: "sam",
-    id: 5,
-  };
-  if (!user) {
-    throw new Error("Login failed");
-  }
-
-  return user;
-};
+import { useSignUp } from "../auth/useSignUp";
 
 const SignUp = () => {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  const mutation = useMutation(login, {
-    onSuccess: (data) => {
-      // Store user info in local storage
-      localStorage.setItem("user", JSON.stringify(data));
-      console.log("Login successful", data);
-      // Update user state if needed, you can do this by setting a global state or using context
-    },
-    onError: (error) => {
-      console.error("Login failed", error);
-    },
-  });
+  const signUp = useSignUp();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,12 +15,14 @@ const SignUp = () => {
       console.error("Passwords do not match");
       return;
     }
-
-    mutation.mutate({
-      // username: username,
+    const user = {
+      id: username,
+      username: username,
       email: email,
       password: password,
-    });
+    };
+
+    signUp(user);
   };
   return (
     <div className="w-full h-screen bg-gradient-to-br from-[#2C2C2C] to-[#012C61]">

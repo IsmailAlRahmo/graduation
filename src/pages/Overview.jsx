@@ -1,14 +1,12 @@
 import { Gauge, gaugeClasses, LineChart } from "@mui/x-charts";
 
+import { useUserStats } from "../api/useUserStats";
+
 const Overview = () => {
-  const xLabels = [
-    "sesseion 1",
-    "sesseion 2",
-    "sesseion 3",
-    "sesseion 4",
-    "sesseion 5",
-    "sesseion 6",
-  ];
+  const { data, isLoading } = useUserStats();
+  console.log({ data });
+  const date = new Date();
+  const xLabels = ["sesseion 1", "sesseion 2", "sesseion 3"];
   return (
     <div>
       <div className=" w-full pt-6 flex">
@@ -22,11 +20,14 @@ const Overview = () => {
             <p className="text-sm inline-block mt-5 text-slate-300">
               Monday, 15 July 2024{" "}
             </p>
-            <p className="text-sm inline-block pl-4 text-slate-300">11:00 AM</p>
+            <p className="text-sm inline-block pl-4 text-slate-300">
+              {date.getHours()}:{date.getMinutes()}
+              {date.getHours() < 12 ? " AM" : " PM"}
+            </p>
           </div>
           <div className="rounded-3xl bg-[#192533] py-2 w-[250px] h-[170px]">
             <Gauge
-              value={3}
+              value={!isLoading ? data[0].oa : 0}
               valueMax={5}
               className=" w-[250px] h-[130px]"
               innerRadius="75%"
@@ -50,7 +51,7 @@ const Overview = () => {
         <div className="font-bold w-[250px] h-[160px] bg-[#dadee2] rounded-3xl ml-5">
           <p className="text-sm ml-4 pt-2">Body language score:</p>
           <Gauge
-            value={3}
+            value={!isLoading ? data[0].bl : 0}
             valueMax={5}
             className="w-[250px] h-[130px]"
             innerRadius="75%"
@@ -79,7 +80,7 @@ const Overview = () => {
               className="w-full h-full"
               grid={{ horizontal: true }}
               xAxis={[{ scaleType: "point", data: xLabels }]}
-              series={[{ type: "line", data: [1.2, 4.4, 1.6, 2.5] }]}
+              series={[{ type: "line", data: [1.2, 4.4, 2.5] }]}
               sx={{
                 "& .MuiChartsAxis-left .MuiChartsAxis-line": {
                   stroke: "#94a3b8",
@@ -113,7 +114,7 @@ const Overview = () => {
             </h1>
             <div className="">
               <Gauge
-                value={3}
+                value={!isLoading ? data[0].fe : 0}
                 valueMax={5}
                 className=" w-[250px] h-[120px]"
                 innerRadius="75%"
@@ -136,7 +137,7 @@ const Overview = () => {
             <h1 className=" text-sm ml-4 pt-2">Vocal tone score:</h1>
             <div className="font-bold mx-auto">
               <Gauge
-                value={3}
+                value={!isLoading ? data[0].vt : 0}
                 valueMax={5}
                 className="w-[250px] h-[120px]"
                 innerRadius="75%"

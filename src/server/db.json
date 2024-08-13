@@ -1,35 +1,41 @@
 {
-    "students":[
-        {
-            "id":1,
-            "name":"alex",
-            "grade":11,
-            "marks":{
-                "maths":80,
-                "physics":50,
-                "chemistry":35
-            }
-        },
-        {
-            "id":2,
-            "name":"gary",
-            "grade":12,
-            "marks":{
-                "maths":70,
-                "physics":50,
-                "chemistry":65
-            }
-        },
-        {
-            "id":3,
-            "name":"stuart",
-            "grade":11,
-            "marks":{
-                "maths":80,
-                "physics":20,
-                "chemistry":90
-            }
-        }
-        
-    ]
+  "users": [
+    {
+      "id": "0966",
+      "username": "Ismail",
+      "email": "sam3o19997e@gmail.com",
+      "password": "13218"
+    },
+    {
+      "id": "jojo",
+      "username": "jojo",
+      "email": "jojo@gmail.com",
+      "password": "111111"
+    }
+  ],
+  "stats":[
+    {
+        "bl": "2",
+        "fe": "4",
+        "vt": "3",
+        "oa": "2"
+    }
+  ],
+  "videos":[
+    {
+        "title": "video 1",
+        "description": "Keep going! you have some points to improve, you was a little stress, try to take a breath while speaking",
+        "score": "4"
+    },
+    {
+        "title": "video 2",
+        "description": "you have some points to improve, you was a little stress",
+        "score": "1"
+    },
+    {
+        "title": "video 3",
+        "description": "try to take a breath while speaking",
+        "score": "2"
+    }
+  ]
 }
