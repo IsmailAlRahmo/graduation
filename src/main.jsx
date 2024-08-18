@@ -18,6 +18,7 @@ import Reports from "./pages/Reports.jsx";
 import { QueryClient, QueryClientProvider } from "react-query";
 import { useUser } from "./auth/useUser.jsx";
 import Live from "./pages/Live.jsx";
+import DummyWebSocket from "./pages/DummyWebSocket.jsx";
 
 function ProtectedRoute({ children }) {
   const { user } = useUser();
@@ -30,10 +31,10 @@ const router = createBrowserRouter([
     path: "/",
     element: <Home />,
   },
-  // {
-  //   path: "/dummy",
-  //   element: <DummyWebSocket />,
-  // },
+  {
+    path: "/dummy",
+    element: <DummyWebSocket />,
+  },
   {
     path: "signin",
     element: <Login />,

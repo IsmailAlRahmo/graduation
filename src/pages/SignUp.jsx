@@ -16,7 +16,6 @@ const SignUp = () => {
       return;
     }
     const user = {
-      id: username,
       username: username,
       email: email,
       password: password,

@@ -1,6 +1,7 @@
 import { FaPlayCircle } from "react-icons/fa";
 import Advice from "../components/Advice";
 import Performance from "../components/Performance";
+import VideoOverlayComponent from "../components/live-video/VideoOverlayComponent";
 import { FaPause } from "react-icons/fa";
 import { useState } from "react";
 const Live = () => {
@@ -9,7 +10,8 @@ const Live = () => {
     <div className="w-full h-screen bg-black px-24 py-20 ">
       <div className="w-full h-full flex justify-evenly">
         <Advice recording={recording} />
-        <Performance recording={recording} />
+        {/* <Performance recording={recording} /> */}
+        {/* <VideoOverlayComponent /> */}
       </div>
       <div className="text-center  flex justify-center">
         <button onClick={() => setRecording(!recording)}>

@@ -4,7 +4,7 @@ import { useUserStats } from "../api/useUserStats";
 
 const Overview = () => {
   const { data, isLoading } = useUserStats();
-  console.log({ data });
+  // console.log({ data });
   const date = new Date();
   const xLabels = ["sesseion 1", "sesseion 2", "sesseion 3"];
   return (

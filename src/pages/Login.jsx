@@ -10,7 +10,6 @@ const Login = () => {
 
   const handleSignIn = (form) => {
     form.preventDefault();
-    console.log(email);
 
     const user = {
       email: email,
