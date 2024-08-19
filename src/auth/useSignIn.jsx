@@ -5,11 +5,10 @@ import * as userLocalStorage from "./user.localstore";
 
 async function signIn(data) {
   const response = await fetch("http://127.0.0.1:5001/login", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(data),
+   method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(data),
+  // credentials: "include", // This ensures cookies are sent
   });
   if (!response.ok) throw new Error("Failed on sign up request", response);
   const responseData = await response.json();
@@ -28,8 +27,8 @@ export function useSignIn() {
   const { mutate: signInMutation } = useMutation((data) => signIn(data), {
     onSuccess: (data) => {
       console.log(data);
-      queryClient.setQueryData([QUERY_KEY.user], data.inputData);
-      userLocalStorage.saveUser(data.inputData);
+      queryClient.setQueryData([QUERY_KEY.user], data.responseData);
+      userLocalStorage.saveUser(data);
       navigate("/home/overview");
     },
     onError: (error) => {

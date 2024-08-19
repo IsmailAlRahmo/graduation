@@ -32,13 +32,14 @@ import uuid
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
 app.config["SECRET_KEY"] = "secret!"
 socketio = SocketIO(app, cors_allowed_origins="*")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 RECORDING = 1
 db = SQLAlchemy(app)
+# session_data = {}
 
 
 # إنشاء جدول المستخدمين
@@ -87,6 +88,7 @@ class SessionReport(db.Model):
     body_lean_percentage = db.Column(db.Float, nullable=True)
     open_palms_forward_percentage = db.Column(db.Float, nullable=True)
     triangle_power_percentage = db.Column(db.Float, nullable=True)
+    audio_result = db.Column(db.Text, nullable=True)
 
     video = db.relationship("Video", backref=db.backref("reports", lazy=True))
 
@@ -994,9 +996,11 @@ def get_average_score():
 
 
 @app.route("/videos", methods=["GET"])
+# @app.route("/videos", methods=["GET"])
 def get_videos():
-    user_id = session.get("user_id")
-    print(f"{user_id}")
+    user_id = request.headers.get("User-ID")
+    print(f"Session user_id: {user_id}")  # Debugging line
+
     if not user_id:
         return jsonify({"message": "User not logged in"}), 401
 
@@ -1015,10 +1019,37 @@ def get_videos():
     return jsonify(videos_list), 200
 
 
+# last video report
+@app.route("/video/latest", methods=["GET"])
+def get_latest_video():
+    user_id = request.headers.get("User-ID")
+    if not user_id:
+        return jsonify({"message": "User not logged in"}), 401
+
+    # Query to get the latest video for the user
+    latest_video = (
+        Video.query.filter_by(user_id=user_id)
+        .order_by(Video.recorded_at.desc())
+        .first()
+    )
+
+    if not latest_video:
+        return jsonify({"message": "No videos found"}), 404
+
+    video_details = {
+        "id": latest_video.id,
+        "video_name": latest_video.video_name,
+        "recorded_at": latest_video.recorded_at,
+        "score": latest_video.score,
+    }
+
+    return jsonify(video_details), 200
+
+
 # عرض تفاصيل الفيديو
 @app.route("/video/<int:video_id>", methods=["GET"])
 def get_video(video_id):
-    user_id = session.get("user_id")
+    user_id = request.headers.get("User-ID")
     if not user_id:
         return jsonify({"message": "User not logged in"}), 401
 
@@ -1038,7 +1069,7 @@ def get_video(video_id):
 
 @app.route("/report/<int:video_id>", methods=["GET"])
 def get_report(video_id):
-    user_id = session.get("user_id")
+    user_id = request.headers.get("User-ID")
     if not user_id:
         return jsonify({"message": "User not logged in"}), 401
 
@@ -1072,6 +1103,7 @@ def get_report(video_id):
         "body_lean_percentage": report.body_lean_percentage,
         "open_palms_forward_percentage": report.open_palms_forward_percentage,
         "triangle_power_percentage": report.triangle_power_percentage,
+        "audio_data": report.audio_result
     }
 
     return jsonify(report_details), 200
@@ -1143,10 +1175,10 @@ def extract_feature(file_name, **kwargs):
     return result
 
 
-recording_flag = False
+recording_flag = True
 THRESHOLD = 500
-CHUNK_SIZE = 2048  # Adjust chunk size if needed
-RECORD_SECONDS = 10  # Total recording duration
+CHUNK_SIZE = 1024  # Adjust chunk size if needed
+RECORD_SECONDS = 30  # Total recording duration
 FORMAT = pyaudio.paInt16
 RATE = 16000
 MODEL = pickle.load(open("mlp_classifier.model", "rb"))
@@ -1257,8 +1289,8 @@ def record_to_file(path):
     wf.close()
 
 
-recording_flag = False
 all_chunks = []
+emotion_count = {emotion: 0 for emotion in MODEL.classes_}  # Initialize emotion count
 
 
 @socketio.on("start_recording")
@@ -1266,6 +1298,7 @@ def start_recording():
     global recording_flag, all_chunks
     recording_flag = True
     all_chunks = []  # Reset chunks
+    emotion_count = {emotion: 0 for emotion in MODEL.classes_}  # Reset emotion count
     print("Recording started")
     socketio.emit("audio_status", {"status": "Recording started"})
 
@@ -1313,15 +1346,30 @@ def start_recording():
 
 @socketio.on("stop_recording")
 def stop_recording():
+    #######  for audio handling #######
     global recording_flag
     recording_flag = False
-    print("Stop command received")
+    print("Stop audio received")
 
-    # Save all accumulated chunks to a single audio file
-    if all_chunks:
-        filename = "full_recording.wav"
-        save_audio(filename, all_chunks, pyaudio.PyAudio().get_sample_size(FORMAT))
-        print(f"Full recording saved as {filename}")
+    # # Save all accumulated chunks to a single audio file
+    # if all_chunks:
+    #     filename = "full_recording.wav"
+    #     save_audio(filename, all_chunks, pyaudio.PyAudio().get_sample_size(FORMAT))
+    #     print(f"Full recording saved as {filename}")
+    # # Calculate the percentage of each detected emotion
+    # total_emotions = sum(emotion_count.values())
+    # emotion_percentage = {
+    #     emotion: (count / total_emotions) * 100 if total_emotions > 0 else 0
+    #     for emotion, count in emotion_count.items()
+    # }
+    # audio_result = "good"
+
+    # # Access the global session_data
+    # global session_data
+
+    # # Add or update the audio_result in session_data
+    # session_data["audio_data"] = audio_result
+    # print(f"Emotion percentages: {emotion_percentage}")
 
 
 def save_audio(path, data, sample_width):
@@ -1335,6 +1383,7 @@ def save_audio(path, data, sample_width):
 
 def process_audio(filename):
     """Process the audio file and emit the result."""
+    global emotion_count  # Access the global emotion_count dictionary
     try:
         # Load and preprocess the audio file
         features = extract_feature(filename, mfcc=True, chroma=True, mel=True).reshape(
@@ -1344,6 +1393,7 @@ def process_audio(filename):
         # Predict emotion
         result = MODEL.predict(features)[0]
 
+        emotion_count[result] += 1
         # Prepare the response
         response = {
             "emotion": result,
@@ -1351,603 +1401,626 @@ def process_audio(filename):
         }
         print(f"{response}")
         # Emit the result to the client
-        socketio.emit("audio_message", response)
+        socketio.emit(
+            "audio_message",
+            {"message": advice.get(result, "No advice available for this emotion.")},
+        )
     except Exception as e:
         print(f"Error processing audio: {e}")
         socketio.emit("server_message", {"message": "Error processing audio."})
 
 
+# @socketio.on("start_video_recording")
+# def start_video(id):
+
+#     print(f"{id}")
+
+session_data = {}
+
+
 @socketio.on("start_video_recording")
 def start_video(id):
-
     print(f"{id}")
-
-
-# def start_video(id):
-#     print(f"{id}")
-#     user_id = id
-#     if not user_id:
-#         return jsonify({"message": "User not logged in"}), 401
-
-#     # استرداد عدد الفيديوهات المسجلة للمستخدم
-#     video_count = Video.query.filter_by(user_id=user_id).count()
-
-#     # تسمية الفيديو الجديد بناءً على عدد الفيديوهات
-#     video_name = f"output_{uuid.uuid4().hex}.avi"
-
-#     cap = cv2.VideoCapture(0)
-#     fourcc = cv2.VideoWriter_fourcc(*"XVID")
-#     out = cv2.VideoWriter(video_name, fourcc, 20.0, (640, 480))
-
-#     current_score = 0
-
-#     # إعداد متغيرات التقييم
-#     weights = {
-#         "HAND_CROSSED": 1,
-#         "HAND_ON_WAIST": 2,
-#         "HAND_ON_HEAD": 1,
-#         "HAND_STRAIGHT_DOWN": 1,
-#         "STANDING_STRAIGHT": 3,
-#         "BODY_LEAN": 2,
-#         "OPEN_PALMS_FORWARD": 2,
-#         "TRIANGLE_POWER": 3,
-#     }
-
-#     movement_start_times = {
-#         "HAND_ON_HEAD": None,
-#         "HAND_STRAIGHT_DOWN": None,
-#         "HAND_ON_WAIST": None,
-#         "HAND_CROSSED": None,
-#         "STANDING_STRAIGHT": None,
-#         "BODY_LEAN": None,
-#         "OPEN_PALMS_FORWARD": None,
-#         "TRIANGLE_POWER": None,
-#     }
-
-#     movement_end_times = {
-#         "HAND_ON_HEAD": None,
-#         "HAND_STRAIGHT_DOWN": None,
-#         "HAND_ON_WAIST": None,
-#         "HAND_CROSSED": None,
-#         "STANDING_STRAIGHT": None,
-#         "BODY_LEAN": None,
-#         "OPEN_PALMS_FORWARD": None,
-#         "TRIANGLE_POWER": None,
-#     }
-
-#     movement_times = {
-#         "HAND_ON_HEAD": [],
-#         "HAND_STRAIGHT_DOWN": [],
-#         "HAND_ON_WAIST": [],
-#         "HAND_CROSSED": [],
-#         "STANDING_STRAIGHT": [],
-#         "BODY_LEAN": [],
-#         "OPEN_PALMS_FORWARD": [],
-#         "TRIANGLE_POWER": [],
-#     }
-
-#     expert_system_statements = []
-#     time_points = []
-#     performance_scores = []
-#     movement_history = []
-
-#     weighted_sum = 0
-#     total_weight = 0
-
-#     plt.ion()
-#     plt.figure()
-
-#     start_time = time.time()
-#     last_time = start_time
-#     duration_limit = 15 * 60  # 10 دقائق بالثواني
-
-#     start_time_all = datetime.datetime.now()
-#     # إنشاء النظام الخبير
-#     engine = PoseExpertSystem()
-#     engine.reset()
-#     # Buffer to hold the last N detection results
-#     buffer_size = 10
-#     detection_buffer = deque(maxlen=buffer_size)
-
-#     # Buffer to hold the last N detection results
-#     buffer_size_w = 10
-#     detection_buffer_w = deque(maxlen=buffer_size_w)
-
-#     # Buffer for detecting body lean over time
-#     body_lean_buffer = []
-#     body_lean_threshold = 30  # Number of frames to confirm body lean
-
-#     def is_movement_detected(movement_name):
-#         return movement_start_times[movement_name] is not None
-
-#     def update_movement(movement, video_time_formatted):
-#         if movement_start_times[movement] is None:
-#             movement_start_times[movement] = video_time_formatted
-#         elif movement_end_times[movement] is None:
-#             movement_end_times[movement] = video_time_formatted
-#             movement_times[movement].append(
-#                 (movement_start_times[movement], movement_end_times[movement])
-#             )
-#             # إعادة تعيين أوقات البداية والنهاية بعد تسجيلها
-#             movement_start_times[movement] = None
-#             movement_end_times[movement] = None
-
-#     # Function to check if a movement has stopped
-#     def movement_has_stopped(movement, detection_flag, grace_period=0.5):
-#         return (
-#             not detection_flag
-#             and is_movement_detected(movement)
-#             and (time.time() - start_time) - last_time >= grace_period
-#         )
-
-#     # Buffer to hold the last N detection results for each movement
-#     buffer_size = 10
-#     movement_buffers = {
-#         "HAND_CROSSED": deque(maxlen=buffer_size),
-#         "HAND_ON_WAIST": deque(maxlen=buffer_size),
-#         "HAND_ON_HEAD": deque(maxlen=buffer_size),
-#         "HAND_STRAIGHT_DOWN": deque(maxlen=buffer_size),
-#         "BODY_LEAN": deque(maxlen=buffer_size),
-#         "OPEN_PALMS_FORWARD": deque(maxlen=buffer_size),
-#         "TRIANGLE_POWER": deque(maxlen=buffer_size),
-#     }
-
-#     def apply_moving_average(buffer):
-#         return sum(buffer) / len(buffer) if len(buffer) > 0 else 0
-
-#     with mp_pose.Pose(
-#         min_detection_confidence=0.8, min_tracking_confidence=0.8
-#     ) as pose, mp_hands.Hands(
-#         min_detection_confidence=0.8, min_tracking_confidence=0.8
-#     ) as hands:
-#         while cap.isOpened():
-#             ret, frame = cap.read()
-#             if not ret:
-#                 break
-
-#             frame = apply_clahe(frame)
-
-#             image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-#             image.flags.writeable = False
-
-#             results_pose = pose.process(image)
-#             results_hands = hands.process(image)
-
-#             image.flags.writeable = True
-#             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-#             # تعريف المتغيرات خارج الشرط
-#             hand_on_head = False
-#             straight_down_hands = False
-#             hand_on_waist = False
-#             crossed_hands = False
-#             standing_straight = False
-#             body_lean = False
-#             open_palm_fw = False
-#             triangle_power_gesture = False
-
-#             if results_pose.pose_landmarks or results_hands.multi_hand_landmarks:
-#                 current_time = time.time() - start_time
-#                 elapsed_time = current_time - last_time
-#                 video_time_formatted = str(datetime.timedelta(seconds=current_time))
-
-#                 if detect_hand_on_head(results_pose.pose_landmarks):
-#                     hand_on_head = True
-#                 if detect_crossed_hands(results_pose.pose_landmarks):
-#                     crossed_hands = True
-#                 # if detect_standing_straight(results_pose.pose_landmarks):
-#                 #     standing_straight = True
-#                 if detect_body_lean(results_pose.pose_landmarks):
-#                     body_lean = True
-#                 if detect_open_palms_with_correct_finger_order(results_hands):
-#                     open_palm_fw = True
-#                 if detect_triangle_power_gesture(
-#                     results_hands, frame.shape[1], frame.shape[0]
-#                 ):
-#                     triangle_power_gesture = True
-#                 if detect_hands_on_waist(results_pose.pose_landmarks):
-#                     hand_on_waist = True
-#                 if detect_straight_down_hands(results_pose.pose_landmarks):
-#                     straight_down_hands = True
-
-#                 engine.declare(
-#                     PoseFact(
-#                         hand_on_head=hand_on_head,
-#                         straight_down_hands=straight_down_hands,
-#                         hand_on_waist=hand_on_waist,
-#                         crossed_hands=crossed_hands,
-#                         # standing_straight=standing_straight,
-#                         body_lean=body_lean,
-#                         open_palm_fw=open_palm_fw,
-#                         triangle_power_gesture=triangle_power_gesture,
-#                     )
-#                 )
-
-#                 engine.run()
-
-#                 previous_score = current_score
-
-#                 # Update buffers and calculate moving averages
-#                 movement_buffers["HAND_ON_HEAD"].append(hand_on_head)
-#                 movement_buffers["HAND_CROSSED"].append(crossed_hands)
-#                 movement_buffers["HAND_ON_WAIST"].append(hand_on_waist)
-#                 movement_buffers["HAND_STRAIGHT_DOWN"].append(straight_down_hands)
-#                 movement_buffers["BODY_LEAN"].append(body_lean)
-#                 movement_buffers["OPEN_PALMS_FORWARD"].append(open_palm_fw)
-#                 movement_buffers["TRIANGLE_POWER"].append(triangle_power_gesture)
-
-#                 hand_on_head_avg = apply_moving_average(
-#                     movement_buffers["HAND_ON_HEAD"]
-#                 )
-#                 crossed_hands_avg = apply_moving_average(
-#                     movement_buffers["HAND_CROSSED"]
-#                 )
-#                 hand_on_waist_avg = apply_moving_average(
-#                     movement_buffers["HAND_ON_WAIST"]
-#                 )
-#                 straight_down_hands_avg = apply_moving_average(
-#                     movement_buffers["HAND_STRAIGHT_DOWN"]
-#                 )
-#                 body_lean_avg = apply_moving_average(movement_buffers["BODY_LEAN"])
-#                 open_palm_fw_avg = apply_moving_average(
-#                     movement_buffers["OPEN_PALMS_FORWARD"]
-#                 )
-#                 triangle_power_gesture_avg = apply_moving_average(
-#                     movement_buffers["TRIANGLE_POWER"]
-#                 )
-
-#                 if crossed_hands_avg > 0.5:
-#                     standing_straight = False
-#                     hand_on_waist = False
-#                     current_score -= weights["HAND_CROSSED"]
-#                     movement_history.append("HAND_CROSSED")
-#                     update_movement("HAND_CROSSED", video_time_formatted)
-#                     expert_system_statements.append((elapsed_time, "Hand crossed"))
-#                     cv2.putText(
-#                         image,
-#                         "Hand crossed",
-#                         (10, 170),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 0, 255),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 if hand_on_waist_avg > 0.5 and not crossed_hands:
-#                     standing_straight = False
-#                     detection_buffer_w.append(hand_on_waist)
-#                     if detection_buffer_w:
-#                         most_common_detection_w = max(
-#                             set(detection_buffer_w), key=detection_buffer_w.count
-#                         )
-#                     most_common_detection_wstr = str(most_common_detection_w)
-#                     current_score -= weights["HAND_ON_WAIST"]
-#                     movement_history.append("HAND_ON_WAIST")
-#                     update_movement("HAND_ON_WAIST", video_time_formatted)
-#                     expert_system_statements.append((elapsed_time, "Hand on waist"))
-#                     cv2.putText(
-#                         image,
-#                         "Hand on waist",
-#                         (10, 140),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 0, 255),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 if hand_on_head_avg > 0.5:
-#                     standing_straight = False
-#                     current_score -= weights["HAND_ON_HEAD"]
-#                     movement_history.append("HAND_ON_HEAD")
-#                     update_movement("HAND_ON_HEAD", video_time_formatted)
-#                     expert_system_statements.append((elapsed_time, "Hand on head"))
-#                     cv2.putText(
-#                         image,
-#                         "Hand on head",
-#                         (10, 200),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 0, 255),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 if straight_down_hands_avg > 0.5:
-#                     standing_straight = False
-#                     current_score += weights["HAND_STRAIGHT_DOWN"]
-#                     movement_history.append("HAND_STRAIGHT_DOWN")
-#                     update_movement("HAND_STRAIGHT_DOWN", video_time_formatted)
-#                     expert_system_statements.append(
-#                         (elapsed_time, "Hand straight down")
-#                     )
-#                     cv2.putText(
-#                         image,
-#                         "Hand straight down",
-#                         (10, 110),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 255, 0),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 # Buffering for body lean
-#                 if body_lean_avg > 0.5:
-#                     body_lean_buffer.append(body_lean)
-#                     if len(body_lean_buffer) > body_lean_threshold:
-#                         body_lean_buffer.pop(0)
-#                     if len(body_lean_buffer) == body_lean_threshold and all(
-#                         body_lean_buffer
-#                     ):
-#                         standing_straight = False
-#                         current_score -= weights["BODY_LEAN"]
-#                         movement_history.append("BODY_LEAN")
-#                         update_movement("BODY_LEAN", video_time_formatted)
-#                         expert_system_statements.append((elapsed_time, "Body lean"))
-#                         cv2.putText(
-#                             image,
-#                             "Body lean",
-#                             (50, 100),
-#                             cv2.FONT_HERSHEY_SIMPLEX,
-#                             1,
-#                             (0, 255, 0),
-#                             2,
-#                             cv2.LINE_AA,
-#                         )
-#                 else:
-#                     body_lean_buffer.clear()
-
-#                 if open_palm_fw_avg > 0.5:
-#                     current_score += weights["OPEN_PALMS_FORWARD"]
-#                     movement_history.append("OPEN_PALMS_FORWARD")
-#                     update_movement("OPEN_PALMS_FORWARD", video_time_formatted)
-#                     expert_system_statements.append(
-#                         (elapsed_time, "Open palms forward")
-#                     )
-#                     cv2.putText(
-#                         image,
-#                         "Both Palms Facing Forward with Correct Finger Order",
-#                         (10, 30),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 255, 0),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 if triangle_power_gesture_avg > 0.5 and not standing_straight:
-#                     if current_time <= 300:
-#                         current_score += weights["TRIANGLE_POWER"]
-#                     else:
-#                         current_score -= weights["TRIANGLE_POWER"]
-#                     movement_history.append("TRIANGLE_POWER")
-#                     update_movement("TRIANGLE_POWER", video_time_formatted)
-#                     expert_system_statements.append(
-#                         (elapsed_time, "Triangle Power Gesture")
-#                     )
-#                     cv2.putText(
-#                         image,
-#                         "TRIANGLE_POWER",
-#                         (50, 30),
-#                         cv2.FONT_HERSHEY_SIMPLEX,
-#                         1,
-#                         (0, 255, 0),
-#                         2,
-#                         cv2.LINE_AA,
-#                     )
-
-#                 if current_score != previous_score:
-#                     time_points.append(current_time)
-#                     performance_scores.append(current_score)
-#                     update_performance_plot(time_points, performance_scores)
-
-#                 performance_score_final = (
-#                     weights["HAND_ON_HEAD"] * hand_on_head_avg
-#                     + weights["HAND_STRAIGHT_DOWN"] * straight_down_hands_avg
-#                     + weights["HAND_ON_WAIST"] * hand_on_waist_avg
-#                     + weights["HAND_CROSSED"] * crossed_hands_avg
-#                     + weights["BODY_LEAN"] * body_lean_avg
-#                     + weights["OPEN_PALMS_FORWARD"] * open_palm_fw_avg
-#                     + weights["TRIANGLE_POWER"]
-#                     * (1 if triangle_power_gesture_avg and current_time <= 300 else -1)
-#                 )
-
-#                 weighted_sum += performance_score_final * elapsed_time
-#                 total_weight += elapsed_time
-#                 average_weighted_score = (
-#                     weighted_sum / total_weight if total_weight != 0 else 0
-#                 )
-
-#             if results_hands.multi_hand_landmarks:
-#                 for hand_landmarks in results_hands.multi_hand_landmarks:
-#                     mp_drawing.draw_landmarks(
-#                         image, hand_landmarks, mp_hands.HAND_CONNECTIONS
-#                     )
-
-#             if results_pose.pose_landmarks:
-#                 mp_drawing.draw_landmarks(
-#                     image, results_pose.pose_landmarks, mp_pose.POSE_CONNECTIONS
-#                 )
-
-#             out.write(image)
-#             cv2.imshow("Live Video", image)
-#             if cv2.waitKey(1) & 0xFF == ord("q"):
-#                 break
-#             # if RECORDING == 0:
-#             #     print("braek working")
-#             #     cap.release()
-#             #     out.release()
-#             #     break
-#     cap.release()
-#     out.release()
-
-#     def calculate_weighted_average(time_points, performance_scores):
-#         if len(time_points) < 2:
-#             return (
-#                 0  # لا يمكن حساب المتوسط الموزون إذا كان هناك نقطة زمنية واحدة أو أقل
-#             )
-
-#         weighted_sum = 0
-#         total_weight = 0
-
-#         for i in range(1, len(time_points)):
-#             time_interval = time_points[i] - time_points[i - 1]
-#             weighted_sum += performance_scores[i] * time_interval
-#             total_weight += time_interval
-
-#         weighted_average = weighted_sum / total_weight if total_weight != 0 else 0
-#         return weighted_average
-
-#     # حساب المتوسط الموزون بعد انتهاء الفيديو
-#     average_weighted_score = calculate_weighted_average(time_points, performance_scores)
-#     print("Weighted Average Performance Score:", average_weighted_score)
-
-#     # أعلى وأقل قيمة للمتوسط الموزون لفيديو مدته 15 دقيقة
-#     max_score = 3683.827913548159
-#     min_score = -2451.8276908782093
-
-#     def normalize_score(score, min_score, max_score):
-#         if score == 0:
-#             return 0
-#         return ((score - min_score) / (max_score - min_score)) * 5
-
-#     normalize_score_avg = normalize_score(average_weighted_score, min_score, max_score)
-
-#     new_video = Video(user_id=user_id, video_name=video_name, score=normalize_score_avg)
-#     db.session.add(new_video)
-#     db.session.commit()
-
-#     # حساب إحصائيات كل حركة
-#     movement_counts = {
-#         movement: movement_history.count(movement) for movement in weights.keys()
-#     }
-#     total_movement_count = sum(movement_counts.values())
-#     movement_percentages = {
-#         movement: (
-#             (count / total_movement_count * 100) if total_movement_count > 0 else 0
-#         )
-#         for movement, count in movement_counts.items()
-#     }
-
-#     evaluation = evaluate_session(normalize_score_avg)
-#     end_time_all = datetime.datetime.now()
-
-#     movement_history_set = set(movement_history)
-
-#     # تحديد النصائح الإيجابية والسلبية
-#     positive_tips = []
-#     negative_tips = []
-
-#     # نصائح إيجابية
-#     if "STANDING_STRAIGHT" in movement_history_set:
-#         positive_tips.append("Good posture! Keep standing straight")
-#     if "HAND_STRAIGHT_DOWN" in movement_history_set:
-#         positive_tips.append("Good motion! Keep hand straight down")
-#     if "OPEN_PALMS_FORWARD" in movement_history_set:
-#         positive_tips.append("Good motion! Open palms forward")
-#     if "TRIANGLE_POWER" in movement_history_set:
-#         positive_tips.append("Good motion! Perform triangle power")
-
-#     # نصائح سلبية
-#     if "HAND_CROSSED" in movement_history_set:
-#         negative_tips.append("Hand crossed")
-#     if "BODY_LEAN" in movement_history_set:
-#         negative_tips.append("Body lean")
-#     if "HAND_ON_HEAD" in movement_history_set:
-#         negative_tips.append(" hand on head")
-#     if "HAND_ON_WAIST" in movement_history_set:
-#         negative_tips.append("Hand on waist")
-
-#     session_data = {
-#         "start_time": start_time_all.strftime("%m/%d/%Y %I:%M:%S %p"),
-#         "end_time": end_time_all.strftime("%m/%d/%Y %I:%M:%S %p"),
-#         "final_score": normalize_score_avg,
-#         "HAND_CROSSED": convert_durations_to_string(
-#             movement_times.get("HAND_CROSSED", [])
-#         ),
-#         "HAND_ON_WAIST": convert_durations_to_string(
-#             movement_times.get("HAND_ON_WAIST", [])
-#         ),
-#         "HAND_ON_HEAD": convert_durations_to_string(
-#             movement_times.get("HAND_ON_HEAD", [])
-#         ),
-#         "HAND_STRAIGHT_DOWN": convert_durations_to_string(
-#             movement_times.get("HAND_STRAIGHT_DOWN", [])
-#         ),
-#         "STANDING_STRAIGHT": convert_durations_to_string(
-#             movement_times.get("STANDING_STRAIGHT", [])
-#         ),
-#         "BODY_LEAN": convert_durations_to_string(movement_times.get("BODY_LEAN", [])),
-#         "OPEN_PALMS_FORWARD": convert_durations_to_string(
-#             movement_times.get("OPEN_PALMS_FORWARD", [])
-#         ),
-#         "TRIANGLE_POWER": convert_durations_to_string(
-#             movement_times.get("TRIANGLE_POWER", [])
-#         ),
-#         "evaluation": evaluation,
-#         "positive_tips": "\n".join(positive_tips),
-#         "negative_tips": "\n".join(negative_tips),
-#         # إحصائيات الحركات
-#         "hand_crossed_percentage": movement_percentages.get("HAND_CROSSED", 0),
-#         "hand_on_waist_percentage": movement_percentages.get("HAND_ON_WAIST", 0),
-#         "hand_on_head_percentage": movement_percentages.get("HAND_ON_HEAD", 0),
-#         "hand_straight_down_percentage": movement_percentages.get(
-#             "HAND_STRAIGHT_DOWN", 0
-#         ),
-#         "standing_straight_percentage": movement_percentages.get(
-#             "STANDING_STRAIGHT", 0
-#         ),
-#         "body_lean_percentage": movement_percentages.get("BODY_LEAN", 0),
-#         "open_palms_forward_percentage": movement_percentages.get(
-#             "OPEN_PALMS_FORWARD", 0
-#         ),
-#         "triangle_power_percentage": movement_percentages.get("TRIANGLE_POWER", 0),
-#     }
-
-#     # حفظ التقرير في قاعدة البيانات
-#     video = Video.query.filter_by(user_id=user_id, video_name=video_name).first()
-#     if not video:
-#         return jsonify({"message": "Video not found"}), 404
-
-#     report = SessionReport(
-#         video_id=video.id,
-#         start_time=session_data["start_time"],
-#         end_time=session_data["end_time"],
-#         final_score=session_data["final_score"],
-#         hand_crossed=session_data["HAND_CROSSED"],
-#         hand_on_waist=session_data["HAND_ON_WAIST"],
-#         hand_on_head=session_data["HAND_ON_HEAD"],
-#         hand_straight_down=session_data["HAND_STRAIGHT_DOWN"],
-#         standing_straight=session_data["STANDING_STRAIGHT"],
-#         body_lean=session_data["BODY_LEAN"],
-#         open_palms_forward=session_data["OPEN_PALMS_FORWARD"],
-#         triangle_power=session_data["TRIANGLE_POWER"],
-#         evaluation=session_data["evaluation"],
-#         positive_tips=session_data["positive_tips"],
-#         negative_tips=session_data["negative_tips"],
-#         hand_crossed_percentage=session_data["hand_crossed_percentage"],
-#         hand_on_waist_percentage=session_data["hand_on_waist_percentage"],
-#         hand_on_head_percentage=session_data["hand_on_head_percentage"],
-#         hand_straight_down_percentage=session_data["hand_straight_down_percentage"],
-#         standing_straight_percentage=session_data["standing_straight_percentage"],
-#         body_lean_percentage=session_data["body_lean_percentage"],
-#         open_palms_forward_percentage=session_data["open_palms_forward_percentage"],
-#         triangle_power_percentage=session_data["triangle_power_percentage"],
-#     )
-
-#     db.session.add(report)
-#     db.session.commit()
-#     socketio.emit(
-#         "video_message",
-#         {
-#             "message": "Video and report recorded and saved",
-#             "video_id": new_video.id,
-#             "report_id": report.id,
-#         },
-#     )
-#     # return jsonify({'message': 'Video and report recorded and saved', 'video_id': new_video.id, 'report_id': report.id}), 200
+    user_id = id
+
+    if not user_id:
+        return jsonify({"message": "User not logged in"}), 401
+
+    # استرداد عدد الفيديوهات المسجلة للمستخدم
+    video_count = Video.query.filter_by(user_id=user_id).count()
+
+    # تسمية الفيديو الجديد بناءً على عدد الفيديوهات
+    video_name = f"output_{uuid.uuid4().hex}.avi"
+
+    cap = cv2.VideoCapture(0)
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    out = cv2.VideoWriter(video_name, fourcc, 20.0, (640, 480))
+
+    current_score = 0
+
+    # إعداد متغيرات التقييم
+    weights = {
+        "HAND_CROSSED": 1,
+        "HAND_ON_WAIST": 2,
+        "HAND_ON_HEAD": 1,
+        "HAND_STRAIGHT_DOWN": 1,
+        "STANDING_STRAIGHT": 3,
+        "BODY_LEAN": 2,
+        "OPEN_PALMS_FORWARD": 2,
+        "TRIANGLE_POWER": 3,
+    }
+
+    movement_start_times = {
+        "HAND_ON_HEAD": None,
+        "HAND_STRAIGHT_DOWN": None,
+        "HAND_ON_WAIST": None,
+        "HAND_CROSSED": None,
+        "STANDING_STRAIGHT": None,
+        "BODY_LEAN": None,
+        "OPEN_PALMS_FORWARD": None,
+        "TRIANGLE_POWER": None,
+    }
+
+    movement_end_times = {
+        "HAND_ON_HEAD": None,
+        "HAND_STRAIGHT_DOWN": None,
+        "HAND_ON_WAIST": None,
+        "HAND_CROSSED": None,
+        "STANDING_STRAIGHT": None,
+        "BODY_LEAN": None,
+        "OPEN_PALMS_FORWARD": None,
+        "TRIANGLE_POWER": None,
+    }
+
+    movement_times = {
+        "HAND_ON_HEAD": [],
+        "HAND_STRAIGHT_DOWN": [],
+        "HAND_ON_WAIST": [],
+        "HAND_CROSSED": [],
+        "STANDING_STRAIGHT": [],
+        "BODY_LEAN": [],
+        "OPEN_PALMS_FORWARD": [],
+        "TRIANGLE_POWER": [],
+    }
+
+    expert_system_statements = []
+    time_points = []
+    performance_scores = []
+    movement_history = []
+
+    weighted_sum = 0
+    total_weight = 0
+
+    plt.ion()
+    plt.figure()
+
+    start_time = time.time()
+    last_time = start_time
+    duration_limit = 15 * 60  # 10 دقائق بالثواني
+
+    start_time_all = datetime.datetime.now()
+    # إنشاء النظام الخبير
+    engine = PoseExpertSystem()
+    engine.reset()
+    # Buffer to hold the last N detection results
+    buffer_size = 10
+    detection_buffer = deque(maxlen=buffer_size)
+
+    # Buffer to hold the last N detection results
+    buffer_size_w = 10
+    detection_buffer_w = deque(maxlen=buffer_size_w)
+
+    # Buffer for detecting body lean over time
+    body_lean_buffer = []
+    body_lean_threshold = 30  # Number of frames to confirm body lean
+
+    def is_movement_detected(movement_name):
+        return movement_start_times[movement_name] is not None
+
+    def update_movement(movement, video_time_formatted):
+        if movement_start_times[movement] is None:
+            movement_start_times[movement] = video_time_formatted
+        elif movement_end_times[movement] is None:
+            movement_end_times[movement] = video_time_formatted
+            movement_times[movement].append(
+                (movement_start_times[movement], movement_end_times[movement])
+            )
+            # إعادة تعيين أوقات البداية والنهاية بعد تسجيلها
+            movement_start_times[movement] = None
+            movement_end_times[movement] = None
+
+    # Function to check if a movement has stopped
+    def movement_has_stopped(movement, detection_flag, grace_period=0.5):
+        return (
+            not detection_flag
+            and is_movement_detected(movement)
+            and (time.time() - start_time) - last_time >= grace_period
+        )
+
+    # Buffer to hold the last N detection results for each movement
+    buffer_size = 10
+    movement_buffers = {
+        "HAND_CROSSED": deque(maxlen=buffer_size),
+        "HAND_ON_WAIST": deque(maxlen=buffer_size),
+        "HAND_ON_HEAD": deque(maxlen=buffer_size),
+        "HAND_STRAIGHT_DOWN": deque(maxlen=buffer_size),
+        "BODY_LEAN": deque(maxlen=buffer_size),
+        "OPEN_PALMS_FORWARD": deque(maxlen=buffer_size),
+        "TRIANGLE_POWER": deque(maxlen=buffer_size),
+    }
+
+    def apply_moving_average(buffer):
+        return sum(buffer) / len(buffer) if len(buffer) > 0 else 0
+
+    with mp_pose.Pose(
+        min_detection_confidence=0.8, min_tracking_confidence=0.8
+    ) as pose, mp_hands.Hands(
+        min_detection_confidence=0.8, min_tracking_confidence=0.8
+    ) as hands:
+        while cap.isOpened() and recording_flag:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame = apply_clahe(frame)
+
+            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            image.flags.writeable = False
+
+            results_pose = pose.process(image)
+            results_hands = hands.process(image)
+
+            image.flags.writeable = True
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+            # تعريف المتغيرات خارج الشرط
+            hand_on_head = False
+            straight_down_hands = False
+            hand_on_waist = False
+            crossed_hands = False
+            standing_straight = False
+            body_lean = False
+            open_palm_fw = False
+            triangle_power_gesture = False
+
+            if results_pose.pose_landmarks or results_hands.multi_hand_landmarks:
+                current_time = time.time() - start_time
+                elapsed_time = current_time - last_time
+                video_time_formatted = str(datetime.timedelta(seconds=current_time))
+
+                if detect_hand_on_head(results_pose.pose_landmarks):
+                    hand_on_head = True
+                if detect_crossed_hands(results_pose.pose_landmarks):
+                    crossed_hands = True
+                # if detect_standing_straight(results_pose.pose_landmarks):
+                #     standing_straight = True
+                if detect_body_lean(results_pose.pose_landmarks):
+                    body_lean = True
+                if detect_open_palms_with_correct_finger_order(results_hands):
+                    open_palm_fw = True
+                if detect_triangle_power_gesture(
+                    results_hands, frame.shape[1], frame.shape[0]
+                ):
+                    triangle_power_gesture = True
+                if detect_hands_on_waist(results_pose.pose_landmarks):
+                    hand_on_waist = True
+                if detect_straight_down_hands(results_pose.pose_landmarks):
+                    straight_down_hands = True
+
+                engine.declare(
+                    PoseFact(
+                        hand_on_head=hand_on_head,
+                        straight_down_hands=straight_down_hands,
+                        hand_on_waist=hand_on_waist,
+                        crossed_hands=crossed_hands,
+                        # standing_straight=standing_straight,
+                        body_lean=body_lean,
+                        open_palm_fw=open_palm_fw,
+                        triangle_power_gesture=triangle_power_gesture,
+                    )
+                )
+
+                engine.run()
+
+                previous_score = current_score
+
+                # Update buffers and calculate moving averages
+                movement_buffers["HAND_ON_HEAD"].append(hand_on_head)
+                movement_buffers["HAND_CROSSED"].append(crossed_hands)
+                movement_buffers["HAND_ON_WAIST"].append(hand_on_waist)
+                movement_buffers["HAND_STRAIGHT_DOWN"].append(straight_down_hands)
+                movement_buffers["BODY_LEAN"].append(body_lean)
+                movement_buffers["OPEN_PALMS_FORWARD"].append(open_palm_fw)
+                movement_buffers["TRIANGLE_POWER"].append(triangle_power_gesture)
+
+                hand_on_head_avg = apply_moving_average(
+                    movement_buffers["HAND_ON_HEAD"]
+                )
+                crossed_hands_avg = apply_moving_average(
+                    movement_buffers["HAND_CROSSED"]
+                )
+                hand_on_waist_avg = apply_moving_average(
+                    movement_buffers["HAND_ON_WAIST"]
+                )
+                straight_down_hands_avg = apply_moving_average(
+                    movement_buffers["HAND_STRAIGHT_DOWN"]
+                )
+                body_lean_avg = apply_moving_average(movement_buffers["BODY_LEAN"])
+                open_palm_fw_avg = apply_moving_average(
+                    movement_buffers["OPEN_PALMS_FORWARD"]
+                )
+                triangle_power_gesture_avg = apply_moving_average(
+                    movement_buffers["TRIANGLE_POWER"]
+                )
+
+                if crossed_hands_avg > 0.5:
+                    standing_straight = False
+                    hand_on_waist = False
+                    current_score -= weights["HAND_CROSSED"]
+                    movement_history.append("HAND_CROSSED")
+                    update_movement("HAND_CROSSED", video_time_formatted)
+                    expert_system_statements.append((elapsed_time, "Hand crossed"))
+                    cv2.putText(
+                        image,
+                        "Hand crossed",
+                        (10, 170),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                if hand_on_waist_avg > 0.5 and not crossed_hands:
+                    standing_straight = False
+                    detection_buffer_w.append(hand_on_waist)
+                    if detection_buffer_w:
+                        most_common_detection_w = max(
+                            set(detection_buffer_w), key=detection_buffer_w.count
+                        )
+                    most_common_detection_wstr = str(most_common_detection_w)
+                    current_score -= weights["HAND_ON_WAIST"]
+                    movement_history.append("HAND_ON_WAIST")
+                    update_movement("HAND_ON_WAIST", video_time_formatted)
+                    expert_system_statements.append((elapsed_time, "Hand on waist"))
+                    cv2.putText(
+                        image,
+                        "Hand on waist",
+                        (10, 140),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                if hand_on_head_avg > 0.5:
+                    standing_straight = False
+                    current_score -= weights["HAND_ON_HEAD"]
+                    movement_history.append("HAND_ON_HEAD")
+                    update_movement("HAND_ON_HEAD", video_time_formatted)
+                    expert_system_statements.append((elapsed_time, "Hand on head"))
+                    cv2.putText(
+                        image,
+                        "Hand on head",
+                        (10, 200),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                if straight_down_hands_avg > 0.5:
+                    standing_straight = False
+                    current_score += weights["HAND_STRAIGHT_DOWN"]
+                    movement_history.append("HAND_STRAIGHT_DOWN")
+                    update_movement("HAND_STRAIGHT_DOWN", video_time_formatted)
+                    expert_system_statements.append(
+                        (elapsed_time, "Hand straight down")
+                    )
+                    cv2.putText(
+                        image,
+                        "Hand straight down",
+                        (10, 110),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                # Buffering for body lean
+                if body_lean_avg > 0.5:
+                    body_lean_buffer.append(body_lean)
+                    if len(body_lean_buffer) > body_lean_threshold:
+                        body_lean_buffer.pop(0)
+                    if len(body_lean_buffer) == body_lean_threshold and all(
+                        body_lean_buffer
+                    ):
+                        standing_straight = False
+                        current_score -= weights["BODY_LEAN"]
+                        movement_history.append("BODY_LEAN")
+                        update_movement("BODY_LEAN", video_time_formatted)
+                        expert_system_statements.append((elapsed_time, "Body lean"))
+                        cv2.putText(
+                            image,
+                            "Body lean",
+                            (50, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            (0, 255, 0),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                else:
+                    body_lean_buffer.clear()
+
+                if open_palm_fw_avg > 0.5:
+                    current_score += weights["OPEN_PALMS_FORWARD"]
+                    movement_history.append("OPEN_PALMS_FORWARD")
+                    update_movement("OPEN_PALMS_FORWARD", video_time_formatted)
+                    expert_system_statements.append(
+                        (elapsed_time, "Open palms forward")
+                    )
+                    cv2.putText(
+                        image,
+                        "Both Palms Facing Forward with Correct Finger Order",
+                        (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                if triangle_power_gesture_avg > 0.5 and not standing_straight:
+                    if current_time <= 300:
+                        current_score += weights["TRIANGLE_POWER"]
+                    else:
+                        current_score -= weights["TRIANGLE_POWER"]
+                    movement_history.append("TRIANGLE_POWER")
+                    update_movement("TRIANGLE_POWER", video_time_formatted)
+                    expert_system_statements.append(
+                        (elapsed_time, "Triangle Power Gesture")
+                    )
+                    cv2.putText(
+                        image,
+                        "TRIANGLE_POWER",
+                        (50, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                if current_score != previous_score:
+                    time_points.append(current_time)
+                    performance_scores.append(current_score)
+                    # update_performance_plot(time_points, performance_scores)
+                    socketio.emit('performance_update', { "score": current_score, "time": current_time })
+
+                performance_score_final = (
+                    weights["HAND_ON_HEAD"] * hand_on_head_avg
+                    + weights["HAND_STRAIGHT_DOWN"] * straight_down_hands_avg
+                    + weights["HAND_ON_WAIST"] * hand_on_waist_avg
+                    + weights["HAND_CROSSED"] * crossed_hands_avg
+                    + weights["BODY_LEAN"] * body_lean_avg
+                    + weights["OPEN_PALMS_FORWARD"] * open_palm_fw_avg
+                    + weights["TRIANGLE_POWER"]
+                    * (1 if triangle_power_gesture_avg and current_time <= 300 else -1)
+                )
+
+                weighted_sum += performance_score_final * elapsed_time
+                total_weight += elapsed_time
+                average_weighted_score = (
+                    weighted_sum / total_weight if total_weight != 0 else 0
+                )
+
+            if results_hands.multi_hand_landmarks:
+                for hand_landmarks in results_hands.multi_hand_landmarks:
+                    mp_drawing.draw_landmarks(
+                        image, hand_landmarks, mp_hands.HAND_CONNECTIONS
+                    )
+
+            if results_pose.pose_landmarks:
+                mp_drawing.draw_landmarks(
+                    image, results_pose.pose_landmarks, mp_pose.POSE_CONNECTIONS
+                )
+
+            out.write(image)
+            cv2.imshow("Live Video", image)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+    cap.release()
+    out.release()
+
+    def calculate_weighted_average(time_points, performance_scores):
+        if len(time_points) < 2:
+            return (
+                0  # لا يمكن حساب المتوسط الموزون إذا كان هناك نقطة زمنية واحدة أو أقل
+            )
+
+        weighted_sum = 0
+        total_weight = 0
+
+        for i in range(1, len(time_points)):
+            time_interval = time_points[i] - time_points[i - 1]
+            weighted_sum += performance_scores[i] * time_interval
+            total_weight += time_interval
+
+        weighted_average = weighted_sum / total_weight if total_weight != 0 else 0
+        return weighted_average
+
+    # حساب المتوسط الموزون بعد انتهاء الفيديو
+    average_weighted_score = calculate_weighted_average(time_points, performance_scores)
+    print("Weighted Average Performance Score:", average_weighted_score)
+
+    # أعلى وأقل قيمة للمتوسط الموزون لفيديو مدته 15 دقيقة
+    max_score = 3683.827913548159
+    min_score = -2451.8276908782093
+
+    def normalize_score(score, min_score, max_score):
+        if score == 0:
+            return 0
+        return ((score - min_score) / (max_score - min_score)) * 5
+
+    normalize_score_avg = normalize_score(average_weighted_score, min_score, max_score)
+
+    new_video = Video(user_id=user_id, video_name=video_name, score=normalize_score_avg)
+    db.session.add(new_video)
+    db.session.commit()
+
+    # حساب إحصائيات كل حركة
+    movement_counts = {
+        movement: movement_history.count(movement) for movement in weights.keys()
+    }
+    total_movement_count = sum(movement_counts.values())
+    movement_percentages = {
+        movement: (
+            (count / total_movement_count * 100) if total_movement_count > 0 else 0
+        )
+        for movement, count in movement_counts.items()
+    }
+
+    evaluation = evaluate_session(normalize_score_avg)
+    end_time_all = datetime.datetime.now()
+
+    movement_history_set = set(movement_history)
+
+    # تحديد النصائح الإيجابية والسلبية
+    positive_tips = []
+    negative_tips = []
+
+    # نصائح إيجابية
+    if "STANDING_STRAIGHT" in movement_history_set:
+        positive_tips.append("Good posture! Keep standing straight")
+    if "HAND_STRAIGHT_DOWN" in movement_history_set:
+        positive_tips.append("Good motion! Keep hand straight down")
+    if "OPEN_PALMS_FORWARD" in movement_history_set:
+        positive_tips.append("Good motion! Open palms forward")
+    if "TRIANGLE_POWER" in movement_history_set:
+        positive_tips.append("Good motion! Perform triangle power")
+
+    # نصائح سلبية
+    if "HAND_CROSSED" in movement_history_set:
+        negative_tips.append("Hand crossed")
+    if "BODY_LEAN" in movement_history_set:
+        negative_tips.append("Body lean")
+    if "HAND_ON_HEAD" in movement_history_set:
+        negative_tips.append(" hand on head")
+    if "HAND_ON_WAIST" in movement_history_set:
+        negative_tips.append("Hand on waist")
+    # save audio when stop
+    print("Stop audio received")
+
+    # Save all accumulated chunks to a single audio file
+    if all_chunks:
+        filename = "full_recording.wav"
+        save_audio(filename, all_chunks, pyaudio.PyAudio().get_sample_size(FORMAT))
+        print(f"Full recording saved as {filename}")
+    # Calculate the percentage of each detected emotion
+    total_emotions = sum(emotion_count.values())
+    emotion_percentage = {
+        emotion: (count / total_emotions) * 100 if total_emotions > 0 else 0
+        for emotion, count in emotion_count.items()
+    }
+    audio_result = "good"
+    # Add or update the audio_result in session_data
+    print(f"Emotion percentages: {emotion_percentage}")
+    session_data = {
+        "start_time": start_time_all.strftime("%m/%d/%Y %I:%M:%S %p"),
+        "end_time": end_time_all.strftime("%m/%d/%Y %I:%M:%S %p"),
+        "final_score": normalize_score_avg,
+        "HAND_CROSSED": convert_durations_to_string(
+            movement_times.get("HAND_CROSSED", [])
+        ),
+        "HAND_ON_WAIST": convert_durations_to_string(
+            movement_times.get("HAND_ON_WAIST", [])
+        ),
+        "HAND_ON_HEAD": convert_durations_to_string(
+            movement_times.get("HAND_ON_HEAD", [])
+        ),
+        "HAND_STRAIGHT_DOWN": convert_durations_to_string(
+            movement_times.get("HAND_STRAIGHT_DOWN", [])
+        ),
+        "STANDING_STRAIGHT": convert_durations_to_string(
+            movement_times.get("STANDING_STRAIGHT", [])
+        ),
+        "BODY_LEAN": convert_durations_to_string(movement_times.get("BODY_LEAN", [])),
+        "OPEN_PALMS_FORWARD": convert_durations_to_string(
+            movement_times.get("OPEN_PALMS_FORWARD", [])
+        ),
+        "TRIANGLE_POWER": convert_durations_to_string(
+            movement_times.get("TRIANGLE_POWER", [])
+        ),
+        "evaluation": evaluation,
+        "positive_tips": "\n".join(positive_tips),
+        "negative_tips": "\n".join(negative_tips),
+        # إحصائيات الحركات
+        "hand_crossed_percentage": movement_percentages.get("HAND_CROSSED", 0),
+        "hand_on_waist_percentage": movement_percentages.get("HAND_ON_WAIST", 0),
+        "hand_on_head_percentage": movement_percentages.get("HAND_ON_HEAD", 0),
+        "hand_straight_down_percentage": movement_percentages.get(
+            "HAND_STRAIGHT_DOWN", 0
+        ),
+        "standing_straight_percentage": movement_percentages.get(
+            "STANDING_STRAIGHT", 0
+        ),
+        "body_lean_percentage": movement_percentages.get("BODY_LEAN", 0),
+        "open_palms_forward_percentage": movement_percentages.get(
+            "OPEN_PALMS_FORWARD", 0
+        ),
+        "triangle_power_percentage": movement_percentages.get("TRIANGLE_POWER", 0),
+        "audio_data": audio_result,
+    }
+
+    # حفظ التقرير في قاعدة البيانات
+    video = Video.query.filter_by(user_id=user_id, video_name=video_name).first()
+    if not video:
+        return jsonify({"message": "Video not found"}), 404
+    # print(session_data["audio_data"])
+    print(f"{session_data}")
+    report = SessionReport(
+        video_id=video.id,
+        start_time=session_data["start_time"],
+        end_time=session_data["end_time"],
+        final_score=session_data["final_score"],
+        hand_crossed=session_data["HAND_CROSSED"],
+        hand_on_waist=session_data["HAND_ON_WAIST"],
+        hand_on_head=session_data["HAND_ON_HEAD"],
+        hand_straight_down=session_data["HAND_STRAIGHT_DOWN"],
+        standing_straight=session_data["STANDING_STRAIGHT"],
+        body_lean=session_data["BODY_LEAN"],
+        open_palms_forward=session_data["OPEN_PALMS_FORWARD"],
+        triangle_power=session_data["TRIANGLE_POWER"],
+        evaluation=session_data["evaluation"],
+        positive_tips=session_data["positive_tips"],
+        negative_tips=session_data["negative_tips"],
+        hand_crossed_percentage=session_data["hand_crossed_percentage"],
+        hand_on_waist_percentage=session_data["hand_on_waist_percentage"],
+        hand_on_head_percentage=session_data["hand_on_head_percentage"],
+        hand_straight_down_percentage=session_data["hand_straight_down_percentage"],
+        standing_straight_percentage=session_data["standing_straight_percentage"],
+        body_lean_percentage=session_data["body_lean_percentage"],
+        open_palms_forward_percentage=session_data["open_palms_forward_percentage"],
+        triangle_power_percentage=session_data["triangle_power_percentage"],
+        audio_result=session_data["audio_data"],
+    )
+
+    db.session.add(report)
+    db.session.commit()
+    socketio.emit(
+        "server_message",
+        {
+            "message": "Video and report recorded and saved",
+            "video_id": new_video.id,
+            "report_id": report.id,
+        },
+    )
+    # return jsonify({'message': 'Video and report recorded and saved', 'video_id': new_video.id, 'report_id': report.id}), 200
 
 
 @socketio.on("connect")
@@ -1959,4 +2032,4 @@ def handle_connect():
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5001, debug=False)
+    socketio.run(app, host="0.0.0.0", port=5001, debug=True)

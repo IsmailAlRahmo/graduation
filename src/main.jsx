@@ -19,6 +19,7 @@ import { QueryClient, QueryClientProvider } from "react-query";
 import { useUser } from "./auth/useUser.jsx";
 import Live from "./pages/Live.jsx";
 import DummyWebSocket from "./pages/DummyWebSocket.jsx";
+import VideoDetail from "./pages/VideoDetail.jsx";
 
 function ProtectedRoute({ children }) {
   const { user } = useUser();
@@ -52,7 +53,7 @@ const router = createBrowserRouter([
     element: <Live />,
   },
   {
-    path: "home",
+    path: "/home",
     element: (
       <ProtectedRoute>
         <App />
@@ -60,16 +61,20 @@ const router = createBrowserRouter([
     ),
     children: [
       {
-        path: "/home/overview",
+        path: "overview",
         element: <Overview />,
       },
       {
-        path: "/home/videos",
+        path: "videos",
         element: <MyVideos />,
       },
       {
-        path: "/home/reports",
+        path: "reports",
         element: <Reports />,
+      },
+      {
+        path: "videos/:id", // Route for video details
+        element: <VideoDetail />,
       },
     ],
   },
